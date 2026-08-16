@@ -1,0 +1,30 @@
+# ============================================================
+# SIPJU - Cloudflare Tunnel (OPSIONAL)
+# Akses publik via subdomain Cloudflare TANPA buka port VPS.
+#
+# CARA PAKAI:
+# 1. Di dashboard Cloudflare: Zero Trust -> Networks -> Tunnels
+#    -> Create a tunnel -> pilih "Cloudflared" -> salin token.
+# 2. Tambahkan Public Hostname, mis. subdomain:
+#      sipju.pju.biz.id  ->  service: http://pju-web:80
+# 3. Isi CLOUDFLARE_TUNNEL_TOKEN di bawah (atau pakai .env).
+# 4. Jalankan bersama stack utama:
+#      docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#    (di Portainer: deploy sebagai stack terpisah juga boleh)
+#
+# Setelah aktif, firmware gateway diarahkan ke:
+#   SERVER_BASE_URL = https://sipju.pju.biz.id/api/device/
+# ============================================================
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - pju-net
+
+networks:
+  pju-net:
+    external: true

@@ -1,0 +1,49 @@
+version: "3.8"
+
+# ============================================================
+# SIPJU - Stack Docker (untuk Portainer)
+# Deploy di samping container Node (lpju-iot-app) yang sudah ada.
+#   pju-db  : MariaDB (data di volume, aman walau restart)
+#   pju-web : PHP 8.2 + Apache (SIPJU), init DB otomatis saat start
+# ============================================================
+
+services:
+  pju-db:
+    image: mariadb:10.11
+    container_name: pju-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-ganti_root_pju}
+      MARIADB_DATABASE: pju_monitoring
+      MARIADB_USER: pju
+      MARIADB_PASSWORD: ${DB_PASSWORD:-ganti_pju}
+    volumes:
+      - pju_db_data:/var/lib/mysql
+    networks:
+      - pju-net
+
+  pju-web:
+    build: .
+    image: sipju-web:latest
+    container_name: pju-web
+    restart: unless-stopped
+    depends_on:
+      - pju-db
+    environment:
+      DB_HOST: pju-db
+      DB_NAME: pju_monitoring
+      DB_USER: pju
+      DB_PASS: ${DB_PASSWORD:-ganti_pju}
+      API_KEY: ${API_KEY:-LPJU_IOT_2026}
+      DEVICES: ${DEVICES:-LPJU01}
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    networks:
+      - pju-net
+
+volumes:
+  pju_db_data:
+
+networks:
+  pju-net:
+    name: pju-net

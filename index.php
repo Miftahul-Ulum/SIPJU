@@ -88,7 +88,7 @@ $user = current_user();
             <div class="mb-3 flex items-center justify-between">
                 <h2 class="text-lg font-black text-slate-900">Kondisi Gateway Secara Langsung</h2>
             </div>
-            <div id="nodeGrid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+            <div id="nodeGrid" class="space-y-6"></div>
         </section>
 
         <!-- Grafik Riwayat -->
@@ -216,61 +216,108 @@ function renderNodes() {
         const border = !online ? 'border-slate-200' : (lampOn ? 'border-green-300' : 'border-red-300');
 
         const v = (x, d = '–', dec = 1) => (x !== null && x !== undefined) ? Number(x).toFixed(dec) : d;
-
-        const slavesHtml = (n.slaves || []).map(sl => `
-            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ${sl.state ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-                S${sl.slave_id}: ${sl.state ? 'ON' : 'OFF'} ${sl.lamp_ok ? '' : '⚡'}
-            </span>`).join(' ') || '<span class="text-[10px] text-slate-400">belum ada slave</span>';
-
         const gps = (s.latitude && s.longitude) ? `${Number(s.latitude).toFixed(5)}, ${Number(s.longitude).toFixed(5)}` : '–';
+
+        const statCell = (label, value, sub, color) => `
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">${label}</p>
+                <p class="mt-1 text-2xl font-black ${color}">${value}${sub ? ` <span class="text-sm font-bold text-slate-400">${sub}</span>` : ''}</p>
+            </div>`;
+
+        const slaves = n.slaves || [];
+
+        const slaveCount = Math.max(1, Number(n.slave_count) || slaves.length || 1);
+        const slaveCard = sl => {
+            const slOn = sl.state == 1, slOk = sl.lamp_ok == 1;
+            return `
+            <div class="rounded-2xl border p-4 ${!slOn ? 'border-red-200 bg-red-50/50' : (slOk ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/50')}">
+                <div class="flex items-center justify-between gap-2">
+                    <div>
+                        <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Slave #${sl.slave_id}</p>
+                        <h4 class="font-black text-slate-900">Tiang ${sl.slave_id}</h4>
+                    </div>
+                    <span class="rounded-full px-3 py-1 text-[10px] font-black uppercase ${slOn ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${slOn ? 'Menyala' : 'Mati'}</span>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+                    <div class="rounded-xl border border-slate-100 bg-white p-2.5"><p class="text-[10px] text-slate-500">Relay</p><p class="font-black ${slOn ? 'text-green-700' : 'text-red-600'}">${slOn ? 'ON' : 'OFF'}</p></div>
+                    <div class="rounded-xl border border-slate-100 bg-white p-2.5"><p class="text-[10px] text-slate-500">Lampu</p><p class="font-black ${slOk ? 'text-green-700' : 'text-red-600'}">${slOk ? 'OK' : 'ERROR'}</p></div>
+                </div>
+                <p class="mt-2 text-[10px] text-slate-400">update terakhir ${esc(sl.last_update || '–')}</p>
+            </div>`;
+        };
+        const emptySlaveCard = id => `
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                <div class="flex items-center justify-between gap-2">
+                    <div>
+                        <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Slave #${id}</p>
+                        <h4 class="font-black text-slate-400">Tiang ${id}</h4>
+                    </div>
+                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-400">Belum ada data</span>
+                </div>
+                <p class="mt-3 text-[11px] text-slate-400">Menunggu data dari slave #${id} ...</p>
+            </div>`;
+        const slaveCards = Array.from({ length: slaveCount }, (_, i) => {
+            const sl = slaves.find(x => x.slave_id === i + 1);
+            return sl ? slaveCard(sl) : emptySlaveCard(i + 1);
+        });
 
         return `
         <div class="rounded-2xl border ${border} bg-white p-5 shadow-sm">
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">${esc(n.node_id)}</p>
-              <h3 class="text-base font-black text-slate-900">${esc(n.name)}</h3>
-              <p class="mt-0.5 text-[11px] text-slate-500">${esc(n.location || 'Lokasi belum diatur')}</p>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">${esc(n.node_id)}</p>
+                    <h3 class="text-lg font-black text-slate-900">${esc(n.name)}</h3>
+                    <p class="mt-0.5 text-[11px] text-slate-500">${esc(n.location || 'Lokasi belum diatur')}</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                    <span class="rounded-full border px-3 py-1 text-[10px] font-black uppercase ${badge[1]}">${badge[0]}</span>
+                    <span class="rounded-full px-3 py-1 font-black ${mode === 'MANUAL' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}">${mode}</span>
+                    <span class="rounded-full px-3 py-1 font-black bg-slate-100 text-slate-600">FW ${esc(s.firmware_version || '–')}</span>
+                    <span class="rounded-full px-3 py-1 font-black bg-slate-100 text-slate-600">⏰ ${esc(s.rtc_time || '–')}</span>
+                </div>
             </div>
-            <span class="rounded-full border px-3 py-1 text-[10px] font-black uppercase ${badge[1]}">${badge[0]}</span>
-          </div>
 
-          <div class="mt-3 flex items-center gap-2 text-[11px]">
-            <span class="rounded-full px-2.5 py-1 font-black ${mode === 'MANUAL' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}">${mode}</span>
-            <span class="rounded-full px-2.5 py-1 font-black bg-slate-100 text-slate-600">FW ${esc(s.firmware_version || '–')}</span>
-            <span class="ml-auto font-bold text-slate-500">${s.rtc_time ? '⏰ ' + esc(s.rtc_time) : ''}</span>
-          </div>
+            <div class="mt-5 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                ${statCell('Tiang PJU', esc(n.node_id), '', 'text-slate-900')}
+                ${statCell('Online', online ? 'Ya' : 'Tidak', '', online ? 'text-sky-600' : 'text-slate-400')}
+                ${statCell('Lampu Menyala', !online ? '–' : (lampOn ? 'ON' : 'OFF'), '', lampOn ? 'text-green-600' : 'text-red-500')}
+                ${statCell('Daya Total', v(s.power_watt), 'W', 'text-amber-600')}
+                ${statCell('Tegangan Rata²', v(s.voltage), 'V', 'text-indigo-600')}
+                ${statCell('Energi Total', v(s.energy), 'Wh', 'text-emerald-600')}
+            </div>
 
-          <div class="mt-4 grid grid-cols-3 gap-2 text-[12px]">
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">⚡ Tegangan</p><p class="font-black text-slate-900">${v(s.voltage)}<span class="text-[10px] text-slate-400">V</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🔌 Arus</p><p class="font-black text-slate-900">${v(s.current_amp)}<span class="text-[10px] text-slate-400">A</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">💡 Daya</p><p class="font-black text-slate-900">${v(s.power_watt)}<span class="text-[10px] text-slate-400">W</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🔋 Energi</p><p class="font-black text-slate-900">${v(s.energy)}<span class="text-[10px] text-slate-400">Wh</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">📶 WiFi</p><p class="font-black text-slate-900">${v(s.wifi_rssi, '–', 0)}<span class="text-[10px] text-slate-400">dBm</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🕐 Uptime</p><p class="font-black text-slate-900">${fmtUptime(s.uptime)}</p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🧠 RAM Bebas</p><p class="font-black text-slate-900">${v(s.free_heap, '–', 0)}<span class="text-[10px] text-slate-400">B</span></p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🛰️ GPS</p><p class="font-black text-slate-900 text-[11px]">${esc(gps)}</p></div>
-            <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">📡 Satelit</p><p class="font-black text-slate-900">${v(s.gps_satellites, '–', 0)}<span class="text-[10px] text-slate-400">HDOP ${v(s.gps_hdop)}</span></p></div>
-          </div>
+            <div class="mt-4 grid grid-cols-3 gap-2 text-[12px] sm:grid-cols-6">
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🔌 Arus</p><p class="font-black text-slate-900">${v(s.current_amp)}<span class="text-[10px] text-slate-400">A</span></p></div>
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">📶 WiFi</p><p class="font-black text-slate-900">${v(s.wifi_rssi, '–', 0)}<span class="text-[10px] text-slate-400">dBm</span></p></div>
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🕐 Uptime</p><p class="font-black text-slate-900">${fmtUptime(s.uptime)}</p></div>
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🧠 RAM Bebas</p><p class="font-black text-slate-900">${v(s.free_heap, '–', 0)}<span class="text-[10px] text-slate-400">B</span></p></div>
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">🛰️ GPS</p><p class="font-black text-slate-900 text-[11px]">${esc(gps)}</p></div>
+                <div class="rounded-xl bg-slate-100 p-2.5"><p class="text-[10px] text-slate-500">📡 Satelit</p><p class="font-black text-slate-900">${v(s.gps_satellites, '–', 0)}<span class="text-[10px] text-slate-400">HDOP ${v(s.gps_hdop)}</span></p></div>
+            </div>
 
-          <div class="mt-3 rounded-xl bg-slate-50 p-2.5">
-            <p class="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Slave ESP-NOW</p>
-            <div class="flex flex-wrap gap-1.5">${slavesHtml}</div>
-          </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+                <button onclick="setMode('${n.node_id}','${mode === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'}')"
+                    class="flex-1 min-w-[140px] rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-amber-500 hover:bg-amber-400'}">
+                    ${mode === 'MANUAL' ? 'Mode SCHEDULE' : 'Mode MANUAL'}
+                </button>
+                <button onclick="setLamp('${n.node_id}',1)" ${mode !== 'MANUAL' || !online ? 'disabled' : ''}
+                    class="flex-1 min-w-[70px] rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' && online ? 'bg-green-500 hover:bg-green-400' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">ON</button>
+                <button onclick="setLamp('${n.node_id}',0)" ${mode !== 'MANUAL' || !online ? 'disabled' : ''}
+                    class="flex-1 min-w-[70px] rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' && online ? 'bg-red-500 hover:bg-red-400' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">OFF</button>
+                <button onclick="restart('${n.node_id}')" ${!online ? 'disabled' : ''}
+                    class="rounded-full px-4 py-2 text-[11px] font-black transition active:scale-95 ${online ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">↻ Restart</button>
+            </div>
+            ${mode !== 'MANUAL' ? '<p class="mt-2 text-center text-[10px] text-slate-400">Kontrol ON/OFF manual tersedia dalam mode MANUAL.</p>' : ''}
+        </div>
 
-          <div class="mt-4 flex gap-2">
-            <button onclick="setMode('${n.node_id}','${mode === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'}')"
-                class="flex-1 rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-amber-500 hover:bg-amber-400'}">
-                ${mode === 'MANUAL' ? 'Mode SCHEDULE' : 'Mode MANUAL'}
-            </button>
-            <button onclick="setLamp('${n.node_id}',1)" ${mode !== 'MANUAL' || !online ? 'disabled' : ''}
-                class="flex-1 rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' && online ? 'bg-green-500 hover:bg-green-400' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">ON</button>
-            <button onclick="setLamp('${n.node_id}',0)" ${mode !== 'MANUAL' || !online ? 'disabled' : ''}
-                class="flex-1 rounded-full py-2 text-[11px] font-black text-white transition active:scale-95 ${mode === 'MANUAL' && online ? 'bg-red-500 hover:bg-red-400' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">OFF</button>
-            <button onclick="restart('${n.node_id}')" ${!online ? 'disabled' : ''}
-                class="rounded-full px-3 py-2 text-[11px] font-black transition active:scale-95 ${online ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">↻</button>
-          </div>
-          ${mode !== 'MANUAL' ? '<p class="mt-2 text-center text-[10px] text-slate-400">Kontrol ON/OFF manual tersedia dalam mode MANUAL.</p>' : ''}
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-sm font-black text-slate-900">Status Slave ESP-NOW — ${esc(n.node_id)}</h3>
+                <span class="rounded-full px-3 py-1 text-[10px] font-black ${slaves.length === slaveCount ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}">${slaves.length}/${slaveCount} slave terhubung</span>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                ${slaveCards.join('')}
+            </div>
         </div>`;
     }).join('');
 }

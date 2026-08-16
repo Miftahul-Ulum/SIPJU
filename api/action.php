@@ -145,11 +145,12 @@ try {
             $loc    = trim($_POST['location'] ?? '');
             $lat    = $_POST['lat'] === '' ? null : (float) $_POST['lat'];
             $lng    = $_POST['lng'] === '' ? null : (float) $_POST['lng'];
+            $slaveCount = max(0, (int) ($_POST['slave_count'] ?? 1));
             if ($nodeId === '' || $name === '') {
                 json_out(['status' => 'error', 'message' => 'node_id dan nama wajib diisi'], 400);
             }
-            $pdo->prepare('INSERT INTO nodes (node_id, name, location, lat, lng) VALUES (?,?,?,?,?)')
-                ->execute([$nodeId, $name, $loc, $lat, $lng]);
+            $pdo->prepare('INSERT INTO nodes (node_id, name, location, lat, lng, slave_count) VALUES (?,?,?,?,?,?)')
+                ->execute([$nodeId, $name, $loc, $lat, $lng, $slaveCount]);
             $pdo->prepare('INSERT IGNORE INTO device_state (node_id) VALUES (?)')->execute([$nodeId]);
             json_out(['status' => 'success']);
         }
@@ -161,11 +162,12 @@ try {
             $lat     = $_POST['lat'] === '' ? null : (float) $_POST['lat'];
             $lng     = $_POST['lng'] === '' ? null : (float) $_POST['lng'];
             $enabled = isset($_POST['enabled']) ? (int) $_POST['enabled'] : 1;
+            $slaveCount = max(0, (int) ($_POST['slave_count'] ?? 1));
             if (!$id) {
                 json_out(['status' => 'error', 'message' => 'id wajib diisi'], 400);
             }
-            $pdo->prepare('UPDATE nodes SET name=?, location=?, lat=?, lng=?, enabled=? WHERE id=?')
-                ->execute([$name, $loc, $lat, $lng, $enabled, $id]);
+            $pdo->prepare('UPDATE nodes SET name=?, location=?, lat=?, lng=?, slave_count=?, enabled=? WHERE id=?')
+                ->execute([$name, $loc, $lat, $lng, $slaveCount, $enabled, $id]);
             json_out(['status' => 'success']);
         }
 

@@ -40,18 +40,20 @@ $user = current_user();
         <!-- Form tambah -->
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 class="mb-4 text-lg font-black text-slate-900">Tambah Tiang Baru</h2>
-            <form id="formAdd" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <form id="formAdd" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                 <div><label class="mb-1 block text-[11px] font-bold text-slate-500">ID Node *</label>
                     <input name="node_id" required placeholder="LPJU02" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
                 <div><label class="mb-1 block text-[11px] font-bold text-slate-500">Nama Tiang *</label>
                     <input name="name" required placeholder="PJU Jalan Kartini" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
                 <div><label class="mb-1 block text-[11px] font-bold text-slate-500">Lokasi</label>
                     <input name="location" placeholder="Jl. Kartini, Jepara" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
+                <div><label class="mb-1 block text-[11px] font-bold text-slate-500">Jumlah Slave</label>
+                    <input name="slave_count" type="number" min="1" max="10" value="1" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
                 <div><label class="mb-1 block text-[11px] font-bold text-slate-500">Latitude</label>
                     <input name="lat" type="number" step="any" placeholder="-6.5900" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
                 <div><label class="mb-1 block text-[11px] font-bold text-slate-500">Longitude</label>
                     <input name="lng" type="number" step="any" placeholder="110.6700" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-sky-500 focus:bg-white"></div>
-                <div class="sm:col-span-2 lg:col-span-5">
+                <div class="sm:col-span-2 lg:col-span-6">
                     <button type="submit" class="rounded-full bg-sky-500 px-6 py-2.5 text-sm font-black text-white shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 active:scale-95">+ Tambah Tiang</button>
                 </div>
             </form>
@@ -77,7 +79,8 @@ async function loadList() {
         const lampOn = s.gateway_state == 1;
         const statusBadge = !online ? '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">Offline</span>'
             : `<span class="rounded-full px-2 py-0.5 text-[10px] font-black ${lampOn ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${lampOn ? 'Menyala' : 'Mati'}</span>`;
-        const slaves = (n.slaves || []).map(sl => `S${sl.slave_id}:${sl.state ? 'ON' : 'OFF'}`).join(', ') || '–';
+        const slaveSummary = (n.slaves || []).map(sl => `S${sl.slave_id}:${sl.state ? 'ON' : 'OFF'}`).join(', ');
+        const slaveInfo = `${n.slave_count ?? (n.slaves || []).length} slave` + (slaveSummary ? ` — ${slaveSummary}` : ' · belum ada data');
         return `
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -89,10 +92,10 @@ async function loadList() {
                     </div>
                     <h3 class="font-black text-slate-900">${esc(n.name)}</h3>
                     <p class="text-[11px] text-slate-500">${esc(n.location || '—')}${n.lat != null ? ` · ${n.lat}, ${n.lng}` : ''}</p>
-                    <p class="mt-1 text-[11px] text-slate-500">Slave: <b>${esc(slaves)}</b> · Volt <b>${s.voltage != null ? Number(s.voltage).toFixed(1) + ' V' : '–'}</b> · Daya <b>${s.power_watt != null ? Number(s.power_watt).toFixed(1) + ' W' : '–'}</b> · update ${esc(s.last_seen || '–')}</p>
+                    <p class="mt-1 text-[11px] text-slate-500">Slave: <b>${esc(slaveInfo)}</b> · Volt <b>${s.voltage != null ? Number(s.voltage).toFixed(1) + ' V' : '–'}</b> · Daya <b>${s.power_watt != null ? Number(s.power_watt).toFixed(1) + ' W' : '–'}</b> · update ${esc(s.last_seen || '–')}</p>
                 </div>
                 <div class="flex gap-2 text-[11px] font-bold">
-                    <button onclick="editNode(${n.id},'${esc(n.name)}','${esc(n.location)}','${n.lat ?? ''}','${n.lng ?? ''}',${n.enabled})" class="rounded-full border border-sky-500/60 px-3 py-1.5 text-sky-700 hover:bg-sky-50">Ubah</button>
+                    <button onclick="editNode(${n.id},'${esc(n.name)}','${esc(n.location)}','${n.lat ?? ''}','${n.lng ?? ''}',${n.slave_count ?? 1},${n.enabled})" class="rounded-full border border-sky-500/60 px-3 py-1.5 text-sky-700 hover:bg-sky-50">Ubah</button>
                     <button onclick="delNode(${n.id})" class="rounded-full border border-red-500/60 px-3 py-1.5 text-red-700 hover:bg-red-50">Hapus</button>
                 </div>
             </div>
@@ -119,10 +122,12 @@ async function delNode(id) {
     if (d.status === 'success') loadList();
 }
 
-async function editNode(id, name, location, lat, lng, enabled) {
+async function editNode(id, name, location, lat, lng, slaveCount, enabled) {
     const newName = prompt('Nama tiang:', name);
     if (newName === null) return;
     const newLoc = prompt('Lokasi:', location) ?? '';
+    const newSlaveCount = prompt('Jumlah slave (1-10):', slaveCount);
+    if (newSlaveCount === null) return;
     const newLat = prompt('Latitude:', lat) ?? '';
     const newLng = prompt('Longitude:', lng) ?? '';
     const keep = confirm('Aktifkan tiang ini? Klik OK untuk aktif, Batal untuk nonaktif.');
@@ -131,7 +136,8 @@ async function editNode(id, name, location, lat, lng, enabled) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'action=update_node&id=' + id + '&name=' + encodeURIComponent(newName) +
               '&location=' + encodeURIComponent(newLoc) + '&lat=' + encodeURIComponent(newLat) +
-              '&lng=' + encodeURIComponent(newLng) + '&enabled=' + (keep ? 1 : 0),
+              '&lng=' + encodeURIComponent(newLng) + '&slave_count=' + encodeURIComponent(newSlaveCount) +
+              '&enabled=' + (keep ? 1 : 0),
     }).then(r => r.json());
     if (d.status === 'success') loadList(); else alert(d.message || 'Gagal');
 }

@@ -9,10 +9,12 @@
 // ============================================================
 
 // ===== Database (XAMPP / MySQL) =====
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'pju_monitoring');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+// Nilai default untuk XAMPP lokal. Saat di Docker, variabel
+// lingkungan DB_HOST/DB_NAME/DB_USER/DB_PASS akan menimpa otomatis.
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_NAME', getenv('DB_NAME') ?: 'pju_monitoring');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
 
 // ===== Nama Aplikasi =====
 define('APP_NAME', 'SIPJU');
@@ -24,11 +26,11 @@ define('APP_FULL', 'Sistem Informasi Penerangan Jalan Umum');
 
 // API Key untuk autentikasi request dari ESP32 Gateway.
 // WAJIB sama dengan API_KEY di sketch_gateway.ino
-define('API_KEY', 'LPJU_IOT_2026');
+define('API_KEY', getenv('API_KEY') ?: 'LPJU_IOT_2026');
 
 // Daftar node (gateway) yang terdaftar, dipisah koma.
 // Nama node harus sama dengan NODE_ID di firmware, contoh: LPJU01.
-define('DEVICES', 'LPJU01');
+define('DEVICES', getenv('DEVICES') ?: 'LPJU01');
 
 // Alamat endpoint yang dipakai ESP32 (SERVER_BASE_URL di firmware).
 // Endpoint akan menjadi: {API_ENDPOINT_BASE}{node_id}
