@@ -1,8 +1,11 @@
 <?php
 // ============================================================
-// PJU MONITORING - INSTALLER (jalankan SEKALI di browser)
+// SIPJU - INSTALLER (jalankan SEKALI di browser)
 // http://localhost/PJU/install.php
-// Membuat database, tabel, akun admin default, dan data contoh.
+// Membuat database, tabel, akun admin default, dan node contoh.
+//
+// CATATAN: tabel data lama (sensor_data & schedules versi MQTT)
+// akan di-drop dan diganti schema kontrak firmware ESP-Now.
 // ============================================================
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
@@ -19,7 +22,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
         $pdo->exec('CREATE DATABASE IF NOT EXISTS `' . DB_NAME . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci');
         $pdo->exec('USE `' . DB_NAME . '`');
 
-        // 2. Tabel users
+        // 2. Drop tabel lama yang diganti schema baru
+        $pdo->exec('DROP TABLE IF EXISTS sensor_data');
+        $pdo->exec('DROP TABLE IF EXISTS schedules');
+
+        // 3. Tabel users
         $pdo->exec("CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(50) UNIQUE NOT NULL,
@@ -29,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
 
-        // 3. Tabel nodes (tiang PJU)
+        // 4. Tabel nodes (metadata tiang PJU)
         $pdo->exec("CREATE TABLE IF NOT EXISTS nodes (
             id INT AUTO_INCREMENT PRIMARY KEY,
             node_id VARCHAR(50) UNIQUE NOT NULL,
@@ -41,42 +48,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
 
-        // 4. Tabel sensor_data (riwayat)
-        $pdo->exec("CREATE TABLE IF NOT EXISTS sensor_data (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            node_id VARCHAR(50) NOT NULL,
-            light_level FLOAT NULL,
-            temperature FLOAT NULL,
-            humidity FLOAT NULL,
-            motion TINYINT(1) NULL,
+        // 5. Tabel device_state (state terakhir per gateway)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS device_state (
+            node_id VARCHAR(50) PRIMARY KEY,
+            gateway_state TINYINT(1) NOT NULL DEFAULT 0,
+            firmware_version VARCHAR(20) NOT NULL DEFAULT '',
+            control_mode ENUM('SCHEDULE','MANUAL') NOT NULL DEFAULT 'SCHEDULE',
+            on_schedule TIME NULL,
+            off_schedule TIME NULL,
+            wifi_rssi INT NULL,
+            uptime BIGINT NULL,
+            free_heap INT NULL,
             voltage FLOAT NULL,
             current_amp FLOAT NULL,
             power_watt FLOAT NULL,
-            lamp_status TINYINT(1) NULL,
-            mode VARCHAR(10) NULL,
+            energy FLOAT NULL,
+            rtc_time VARCHAR(8) NULL,
+            gps_satellites INT NULL,
+            gps_hdop FLOAT NULL,
+            latitude VARCHAR(20) NULL,
+            longitude VARCHAR(20) NULL,
+            server_timestamp BIGINT NULL,
+            last_seen DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB");
+
+        // 6. Tabel slaves (status relay + lampu per slave)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS slaves (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            node_id VARCHAR(50) NOT NULL,
+            slave_id INT NOT NULL,
+            state TINYINT(1) NOT NULL DEFAULT 0,
+            lamp_ok TINYINT(1) NOT NULL DEFAULT 1,
+            last_update DATETIME NULL,
+            UNIQUE KEY uq_node_slave (node_id, slave_id)
+        ) ENGINE=InnoDB");
+
+        // 7. Tabel telemetry (riwayat)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS telemetry (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            node_id VARCHAR(50) NOT NULL,
+            gateway_state TINYINT(1) NULL,
+            control_mode VARCHAR(10) NULL,
+            voltage FLOAT NULL,
+            current_amp FLOAT NULL,
+            power_watt FLOAT NULL,
+            energy FLOAT NULL,
+            wifi_rssi INT NULL,
+            uptime BIGINT NULL,
+            free_heap INT NULL,
+            rtc_time VARCHAR(8) NULL,
+            gps_satellites INT NULL,
+            gps_hdop FLOAT NULL,
+            latitude VARCHAR(20) NULL,
+            longitude VARCHAR(20) NULL,
+            on_schedule VARCHAR(8) NULL,
+            off_schedule VARCHAR(8) NULL,
+            firmware_version VARCHAR(20) NULL,
             payload JSON NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_node_time (node_id, created_at)
         ) ENGINE=InnoDB");
 
-        // 5. Tabel schedules (jadwal timer)
-        $pdo->exec("CREATE TABLE IF NOT EXISTS schedules (
+        // 8. Tabel commands (antrean perintah ke device)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS commands (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            node_id VARCHAR(50) NOT NULL DEFAULT '*',
-            day_of_week VARCHAR(40) NOT NULL DEFAULT 'all',
-            start_time TIME NOT NULL,
-            end_time TIME NOT NULL,
-            enabled TINYINT(1) NOT NULL DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            node_id VARCHAR(50) NOT NULL,
+            type VARCHAR(30) NOT NULL,
+            control_mode VARCHAR(10) NULL,
+            on_time VARCHAR(8) NULL,
+            off_time VARCHAR(8) NULL,
+            requested_by VARCHAR(100) NOT NULL DEFAULT 'web',
+            status ENUM('pending','sent','superseded') NOT NULL DEFAULT 'pending',
+            delivered_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_node_status (node_id, status)
         ) ENGINE=InnoDB");
 
-        // 6. Tabel settings
+        // 9. Tabel settings
         $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
             skey VARCHAR(50) PRIMARY KEY,
             svalue VARCHAR(255) NOT NULL DEFAULT ''
         ) ENGINE=InnoDB");
 
-        // 7. Tabel notifications
+        // 10. Tabel notifications
         $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (
             id INT AUTO_INCREMENT PRIMARY KEY,
             type VARCHAR(30) NOT NULL DEFAULT 'info',
@@ -86,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
 
-        // 8. Tabel control_log
+        // 11. Tabel control_log
         $pdo->exec("CREATE TABLE IF NOT EXISTS control_log (
             id INT AUTO_INCREMENT PRIMARY KEY,
             node_id VARCHAR(50) NULL,
@@ -95,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
 
-        // 9. Admin default
+        // 12. Admin default
         $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
         $st->execute(['admin']);
         if ((int) $st->fetchColumn() === 0) {
@@ -103,18 +158,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
                 ->execute(['admin', password_hash('admin123', PASSWORD_DEFAULT), 'Administrator', 'admin']);
         }
 
-        // 10. Node contoh
-        $st = $pdo->prepare('SELECT COUNT(*) FROM nodes');
-        $st->execute();
-        if ((int) $st->fetchColumn() === 0) {
-            $pdo->exec("INSERT INTO nodes (node_id, name, location, lat, lng) VALUES
-                ('pju01','PJU Jalan Ahmad Yani 1','Jl. Ahmad Yani, Jepara',-6.5915,110.6717),
-                ('pju02','PJU Jalan Ahmad Yani 2','Jl. Ahmad Yani, Jepara',-6.5910,110.6722),
-                ('pju03','PJU Alun-Alun Jepara','Jl. Raya Alun-Alun, Jepara',-6.5920,110.6710)");
+        // 13. Node contoh sesuai daftar DEVICES di config
+        foreach (explode(',', DEVICES) as $nodeId) {
+            $nodeId = trim($nodeId);
+            if ($nodeId === '') {
+                continue;
+            }
+            $st = $pdo->prepare('SELECT COUNT(*) FROM nodes WHERE node_id = ?');
+            $st->execute([$nodeId]);
+            if ((int) $st->fetchColumn() === 0) {
+                $pdo->prepare('INSERT INTO nodes (node_id, name, location, lat, lng) VALUES (?,?,?,?,?)')
+                    ->execute([$nodeId, 'PJU ' . $nodeId, 'Lokasi belum diatur', null, null]);
+            }
+            $pdo->prepare('INSERT IGNORE INTO device_state (node_id) VALUES (?)')->execute([$nodeId]);
         }
 
-        // 11. Pengaturan default
-        setting_set('mode', 'auto');           // auto | manual
+        // 14. Pengaturan default
         setting_set('wa_number', WA_DEFAULT_NUMBER);
         setting_set('wa_notify', '1');
         setting_set('installed', '1');
@@ -138,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
         <div class="text-center">
             <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-100 text-3xl">🛣️</div>
             <h1 class="text-xl font-black tracking-tight text-slate-900">Instalasi Database <?= APP_NAME ?></h1>
-            <p class="mt-2 text-sm text-slate-500">Membuat database <b class="text-sky-600"><?= htmlspecialchars(DB_NAME) ?></b> beserta tabel, akun admin, dan data contoh.</p>
+            <p class="mt-2 text-sm text-slate-500">Membuat database <b class="text-sky-600"><?= htmlspecialchars(DB_NAME) ?></b> beserta tabel, akun admin, dan node dari daftar <b class="text-sky-600"><?= htmlspecialchars(DEVICES) ?></b>.</p>
         </div>
 
         <?php if ($message): ?>
@@ -146,6 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
                 <ul class="mt-2 list-disc pl-5 text-xs text-green-600">
                     <li>Login: <b>admin</b> / <b>admin123</b></li>
                     <li>Buka <a class="underline" href="index.php">index.php</a></li>
+                    <li>Endpoint device: <b><?= htmlspecialchars(API_ENDPOINT_BASE) ?>&lt;node_id&gt;</b> (header <b>x-api-key</b>)</li>
                 </ul>
             </div>
         <?php endif; ?>

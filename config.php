@@ -1,7 +1,11 @@
 <?php
 // ============================================================
-// PJU MONITORING - KONFIGURASI UTAMA
-// Sistem Monitoring Penerangan Jalan Umum (Skripsi)
+// SIPJU - KONFIGURASI UTAMA
+// Sistem Informasi Penerangan Jalan Umum (Skripsi)
+// Monitoring PJU berbasis ESP-Now & Internet of Things
+//
+// Dashboard ini SEKALIGUS menjadi backend:
+// ESP32 Gateway -> POST /api/device/{node_id} -> MySQL -> command
 // ============================================================
 
 // ===== Database (XAMPP / MySQL) =====
@@ -14,58 +18,32 @@ define('DB_PASS', '');
 define('APP_NAME', 'SIPJU');
 define('APP_FULL', 'Sistem Informasi Penerangan Jalan Umum');
 
-// ===== Broker MQTT (broker sendiri) =====
-// Contoh broker: EMQX / Mosquitto yang dijalankan di jaringan Anda.
-// Dashboard terhubung ke broker lewat WebSocket.
-define('MQTT_HOST', 'localhost');      // IP / hostname broker (mis. 192.168.1.100)
-define('MQTT_WS_PORT', 8083);          // Port WebSocket MQTT (EMQX: 8083 = ws, 8084 = wss)
-define('MQTT_USE_WSS', false);         // true jika pakai wss (HTTPS), false jika ws (HTTP)
-define('MQTT_PATH', '/mqtt');          // Path WebSocket broker (EMQX default: /mqtt)
-define('MQTT_USER', '');               // Username broker (kosongkan jika anonim)
-define('MQTT_PASS', '');               // Password broker
-define('MQTT_CLIENT_ID', 'pju-dashboard');
+// ============================================================
+// KONFIGURASI FIRMWARE / API
+// ============================================================
 
-// ===== Topik MQTT =====
-// Data sensor dari firmware: pju/<node_id>/sensor
-define('MQTT_TOPIC_DATA', 'pju/+/sensor');
-// Perintah kontrol: dashboard publish ke pju/<node_id>/cmd
-define('MQTT_TOPIC_CMD', 'pju/cmd');
+// API Key untuk autentikasi request dari ESP32 Gateway.
+// WAJIB sama dengan API_KEY di sketch_gateway.ino
+define('API_KEY', 'LPJU_IOT_2026');
 
-// ===== WhatsApp (untuk notifikasi) =====
+// Daftar node (gateway) yang terdaftar, dipisah koma.
+// Nama node harus sama dengan NODE_ID di firmware, contoh: LPJU01.
+define('DEVICES', 'LPJU01');
+
+// Alamat endpoint yang dipakai ESP32 (SERVER_BASE_URL di firmware).
+// Endpoint akan menjadi: {API_ENDPOINT_BASE}{node_id}
+// Contoh akses via LAN: http://192.168.1.100/PJU/api/device/LPJU01
+define('API_ENDPOINT_BASE', 'http://localhost/PJU/api/device/');
+
+// Jeda antar kirim telemetry firmware (ms) - untuk hitung online
+define('TELEMETRY_INTERVAL_MS', 5000);
+
+// Detik tanpa update terakhir sebelum node dianggap offline
+define('NODE_OFFLINE_SECONDS', 60);
+
+// Ambang jumlah mismatch (gateway_state vs slave.state)
+// sebelum memicu notifikasi "DEVICE ERROR"
+define('FAULT_ALERT_THRESHOLD', 3);
+
+// ===== WhatsApp (notifikasi) =====
 define('WA_DEFAULT_NUMBER', '6289524500594');
-
-// ===== Ambang batas (offline / error) =====
-define('NODE_OFFLINE_SECONDS', 300);   // 300 detik = dianggap offline
-define('MOTION_ON_THRESHOLD', 30);     // persen cahaya saat gerakan menyala otomatis
-
-// ============================================================
-// PETA FIELD JSON FIRMWARE -> KOLOM DATABASE
-// Kunci kiri = nama field di JSON yang dikirim firmware,
-// Nilai kanan = nama kolom di tabel sensor_data.
-// Tambahkan mapping sesuai field tambahan firmware Anda.
-// ============================================================
-$FIELD_MAP = [
-    'light'        => 'light_level',
-    'luminosity'   => 'light_level',
-    'ldr'          => 'light_level',
-    'lux'          => 'light_level',
-    'temp'         => 'temperature',
-    'temperature'  => 'temperature',
-    'hum'          => 'humidity',
-    'humidity'     => 'humidity',
-    'motion'       => 'motion',
-    'pir'          => 'motion',
-    'voltage'      => 'voltage',
-    'volt'         => 'voltage',
-    'v'            => 'voltage',
-    'current'      => 'current_amp',
-    'arus'         => 'current_amp',
-    'ampere'       => 'current_amp',
-    'power'        => 'power_watt',
-    'watt'         => 'power_watt',
-    'p'            => 'power_watt',
-    'lamp'         => 'lamp_status',
-    'lamp_status'  => 'lamp_status',
-    'status'       => 'lamp_status',
-    'mode'         => 'mode',
-];

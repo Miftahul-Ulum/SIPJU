@@ -1,0 +1,8 @@
+# ============================================================
+# SIPJU - REWRITE ENDPOINT FIRMWARE
+#   POST api/device/LPJU01  ->  api/device.php?node=LPJU01
+# (format URL harus sesuai pola SERVER_BASE_URL + NODE_ID di
+#  sketch_gateway.ino)
+# ============================================================
+RewriteEngine On
+RewriteRule ^device/([^/]+)/?$ device.php?node=$1 [QSA,L]

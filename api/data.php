@@ -1,16 +1,22 @@
 <?php
 // ============================================================
-// API: AMBIL DATA UNTUK DASHBOARD
-//   GET api/data.php?act=nodes          -> daftar node + pembacaan terakhir
+// SIPJU - API DATA DASHBOARD (harus login)
+//   GET api/data.php?act=nodes          -> node + state terakhir + slaves
 //   GET api/data.php?act=history&node=..&field=..&hours=..
 //   GET api/data.php?act=stats
-//   GET api/data.php?act=schedules
+//   GET api/data.php?act=schedules      -> jadwal per device
+//   GET api/data.php?act=devices        -> daftar node utk dropdown
+//   GET api/data.php?act=commands&node=..
 //   GET api/data.php?act=notifications
 //   GET api/data.php?act=settings
 // ============================================================
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../db.php';
 session_start();
+
+if (current_user() === null) {
+    json_out(['status' => 'error', 'message' => 'Silakan login'], 401);
+}
 
 $act = $_GET['act'] ?? 'nodes';
 
@@ -22,42 +28,49 @@ try {
         case 'nodes': {
             $nodes = $pdo->query('SELECT * FROM nodes WHERE enabled = 1 ORDER BY node_id')->fetchAll();
 
-            // Pembacaan sensor terakhir per node
-            $latest = [];
-            $st = $pdo->prepare('SELECT sd.* FROM sensor_data sd
-                JOIN (SELECT node_id, MAX(id) AS maxid FROM sensor_data GROUP BY node_id) m
-                ON sd.node_id = m.node_id AND sd.id = m.maxid');
-            $st->execute();
+            $states = [];
+            $st = $pdo->query('SELECT * FROM device_state');
             foreach ($st->fetchAll() as $r) {
-                $latest[$r['node_id']] = $r;
+                $states[$r['node_id']] = $r;
+            }
+
+            $slaves = [];
+            $st = $pdo->query('SELECT * FROM slaves ORDER BY node_id, slave_id');
+            foreach ($st->fetchAll() as $r) {
+                $slaves[$r['node_id']][] = [
+                    'slave_id'    => (int) $r['slave_id'],
+                    'state'       => (int) $r['state'],
+                    'lamp_ok'     => (int) $r['lamp_ok'],
+                    'last_update' => $r['last_update'],
+                ];
             }
 
             $offlineSec = NODE_OFFLINE_SECONDS;
             foreach ($nodes as &$n) {
-                $cur = $latest[$n['node_id']] ?? null;
-                $n['live'] = $cur;
-                if ($cur) {
-                    $last = strtotime($cur['created_at']);
-                    $n['offline'] = (time() - $last) > $offlineSec;
-                } else {
-                    $n['offline'] = true;
+                $s = $states[$n['node_id']] ?? null;
+                $n['state']  = $s;
+                $n['slaves'] = $slaves[$n['node_id']] ?? [];
+                $n['online'] = false;
+                if ($s && $s['last_seen']) {
+                    $n['online'] = (time() - strtotime($s['last_seen'])) <= $offlineSec;
                 }
             }
             unset($n);
+
             json_out(['status' => 'success', 'nodes' => $nodes]);
         }
 
         case 'history': {
-            $node   = $_GET['node'] ?? '';
-            $field  = $_GET['field'] ?? 'light_level';
-            $hours  = max(1, min(168, (int) ($_GET['hours'] ?? 24)));
+            $node  = $_GET['node'] ?? '';
+            $field = $_GET['field'] ?? 'voltage';
+            $hours = max(1, min(168, (int) ($_GET['hours'] ?? 24)));
 
-            $allowed = ['light_level','temperature','humidity','voltage','current_amp','power_watt'];
+            $allowed = ['voltage', 'current_amp', 'power_watt', 'energy', 'wifi_rssi'];
             if (!in_array($field, $allowed, true)) {
                 json_out(['status' => 'error', 'message' => 'field tidak valid'], 400);
             }
 
-            $st = $pdo->prepare("SELECT created_at, `$field` AS val FROM sensor_data
+            $st = $pdo->prepare("SELECT created_at, `$field` AS val FROM telemetry
                 WHERE node_id = ? AND `$field` IS NOT NULL AND created_at >= NOW() - INTERVAL ? HOUR
                 ORDER BY created_at ASC");
             $st->execute([$node, $hours]);
@@ -70,50 +83,67 @@ try {
         }
 
         case 'stats': {
-            // Mode saat ini
-            $mode = setting_get('mode', 'auto');
+            $states = $pdo->query('SELECT * FROM device_state')->fetchAll();
 
-            // Jumlah node
             $totalNodes = (int) $pdo->query('SELECT COUNT(*) FROM nodes WHERE enabled = 1')->fetchColumn();
+            $offlineSec = NODE_OFFLINE_SECONDS;
 
-            // Lampu menyala dari data terakhir
-            $st = $pdo->query('SELECT sd.node_id, sd.lamp_status, sd.power_watt, sd.created_at FROM sensor_data sd
-                JOIN (SELECT node_id, MAX(id) AS maxid FROM sensor_data GROUP BY node_id) m
-                ON sd.node_id = m.node_id AND sd.id = m.maxid');
+            $online   = 0;
             $lightsOn = 0;
             $totalWatt = 0.0;
-            $activeRows = 0;
-            foreach ($st->fetchAll() as $r) {
-                if ((time() - strtotime($r['created_at'])) <= NODE_OFFLINE_SECONDS) {
-                    $activeRows++;
-                    if ((int) $r['lamp_status'] === 1) {
-                        $lightsOn++;
-                        $totalWatt += (float) ($r['power_watt'] ?? 0);
-                    }
+            $totalEnergy = 0.0;
+            $voltSum  = 0.0;
+            $voltN    = 0;
+
+            foreach ($states as $s) {
+                $isOnline = $s['last_seen'] && (time() - strtotime($s['last_seen'])) <= $offlineSec;
+                if (!$isOnline) {
+                    continue;
+                }
+                $online++;
+                if ((int) $s['gateway_state'] === 1) {
+                    $lightsOn++;
+                    $totalWatt += (float) ($s['power_watt'] ?? 0);
+                }
+                $totalEnergy += (float) ($s['energy'] ?? 0);
+                if ($s['voltage'] !== null) {
+                    $voltSum += (float) $s['voltage'];
+                    $voltN++;
                 }
             }
 
-            // Rata-rata tegangan (24 jam terakhir)
-            $avgVolt = $pdo->query('SELECT ROUND(AVG(voltage),1) FROM sensor_data WHERE voltage IS NOT NULL AND created_at >= NOW() - INTERVAL 24 HOUR')->fetchColumn();
-
-            // Total data tersimpan
-            $totalRows = (int) $pdo->query('SELECT COUNT(*) FROM sensor_data')->fetchColumn();
-
             json_out([
-                'status'    => 'success',
-                'mode'      => $mode,
-                'total_nodes' => $totalNodes,
-                'lights_on'   => $lightsOn,
-                'lights_off'  => $activeRows - $lightsOn,
-                'total_watt'  => round($totalWatt, 1),
-                'avg_voltage' => $avgVolt === null ? null : (float) $avgVolt,
-                'total_rows'  => $totalRows,
+                'status'        => 'success',
+                'total_nodes'   => $totalNodes,
+                'online'        => $online,
+                'lights_on'     => $lightsOn,
+                'lights_off'    => $online - $lightsOn,
+                'total_watt'    => round($totalWatt, 1),
+                'total_energy'  => round($totalEnergy, 2),
+                'avg_voltage'   => $voltN ? round($voltSum / $voltN, 1) : null,
             ]);
         }
 
         case 'schedules': {
-            $list = $pdo->query('SELECT * FROM schedules ORDER BY id DESC')->fetchAll();
+            $list = $pdo->query('SELECT node_id, gateway_state, control_mode, on_schedule, off_schedule, last_seen FROM device_state ORDER BY node_id')->fetchAll();
             json_out(['status' => 'success', 'schedules' => $list]);
+        }
+
+        case 'devices': {
+            $list = $pdo->query('SELECT node_id, name FROM nodes WHERE enabled = 1 ORDER BY node_id')->fetchAll();
+            json_out(['status' => 'success', 'devices' => $list]);
+        }
+
+        case 'commands': {
+            $node = $_GET['node'] ?? '';
+            if ($node !== '') {
+                $st = $pdo->prepare('SELECT * FROM commands WHERE node_id = ? ORDER BY id DESC LIMIT 20');
+                $st->execute([$node]);
+                $list = $st->fetchAll();
+            } else {
+                $list = $pdo->query('SELECT * FROM commands ORDER BY id DESC LIMIT 30')->fetchAll();
+            }
+            json_out(['status' => 'success', 'commands' => $list]);
         }
 
         case 'notifications': {
@@ -123,11 +153,13 @@ try {
 
         case 'settings': {
             json_out([
-                'status'    => 'success',
-                'settings'  => [
-                    'mode'       => setting_get('mode', 'auto'),
-                    'wa_number'  => setting_get('wa_number', WA_DEFAULT_NUMBER),
-                    'wa_notify'  => setting_get('wa_notify', '1'),
+                'status'   => 'success',
+                'settings' => [
+                    'wa_number' => setting_get('wa_number', WA_DEFAULT_NUMBER),
+                    'wa_notify' => setting_get('wa_notify', '1'),
+                    'api_key'   => API_KEY,
+                    'endpoint'  => API_ENDPOINT_BASE . '&lt;node_id&gt;',
+                    'devices'   => DEVICES,
                 ],
             ]);
         }
