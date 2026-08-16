@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Street Light Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial; margin: 20px; background: #1a1a1a; color: white; }
+        .node { background: #333; padding: 15px; margin: 10px; border-radius: 10px; }
+        .status-on { background: #4CAF50; }
+        .status-off { background: #f44336; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🛣️ Street Light Monitoring System</h1>
+    <div id="nodes" class="grid"></div>
+    <canvas id="chart" width="400" height="200"></canvas>
+
+    <script>
+        const nodes = {};
+        const ctx = document.getElementById('chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Light Level (%)', data: [], borderColor: '#4CAF50' }] },
+            options: { scales: { y: { beginAtZero: true, max: 100 } } }
+        });
+
+        // WebSocket connection ke broker MQTT (misal EMQX)
+        const ws = new WebSocket('wss://test.mosquitto.org:8081/mqtt');
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            updateNode(data);
+        };
+
+        function updateNode(data) {
+            const nodeId = data.node_id;
+            if (!nodes[nodeId]) nodes[nodeId] = {};
+            nodes[nodeId] = data;
+            
+            updateDisplay();
+            updateChart(data);
+        }
+
+        function updateDisplay() {
+            const container = document.getElementById('nodes');
+            container.innerHTML = '';
+            
+            Object.values(nodes).forEach(node => {
+                const div = document.createElement('div');
+                div.className = `node status-${node.lamp_status ? 'on' : 'off'}`;
+                div.innerHTML = `
+                    <h3>Node ${node.node_id}</h3>
+                    <p>💡 Light: ${node.light_level.toFixed(1)}%</p>
+                    <p>🌡️ Temp: ${node.temperature.toFixed(1)}°C</p>
+                    <p>💧 Humidity: ${node.humidity.toFixed(1)}%</p>
+                    <p>👤 Motion: ${node.motion ? 'DETECTED' : 'NO'}</p>
+                    <p>⚡ Voltage: ${node.voltage/100}V</p>
+                    <p>🔆 Status: ${node.lamp_status ? 'ON' : 'OFF'}</p>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function updateChart(data) {
+            chart.data.labels.push(new Date().toLocaleTimeString());
+            chart.data.datasets[0].data.push(data.light_level);
+            
+            if (chart.data.labels.length > 20) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+            chart.update();
+        }
+    </script>
+</body>
+</html>
